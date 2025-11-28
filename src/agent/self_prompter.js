@@ -63,11 +63,18 @@ export class SelfPrompter {
         let no_command_count = 0;
         const MAX_NO_COMMAND = 3;
         while (!this.interrupt) {
-            const msg = `You are self-prompting with the goal: '${this.prompt}'. Your next response MUST contain a command with this syntax: !commandName. Respond:`;
+            let msg;
+            if (no_command_count === 0) {
+                msg = `You are self-prompting with the goal: '${this.prompt}'. Your next response MUST contain a command with this syntax: !commandName. Respond:`;
+            } else {
+                // Escalating prompts when model isn't using commands
+                msg = `You are self-prompting with the goal: '${this.prompt}'. You have NOT used a command in your last ${no_command_count} response(s). You MUST use a command now! Do not just plan or describe - actually execute by using !commandName syntax. What is your next action? Respond with a command:`;
+            }
             
             let used_command = await this.agent.handleMessage('system', msg, -1);
             if (!used_command) {
                 no_command_count++;
+                console.warn(`Self-prompt: No command used (${no_command_count}/${MAX_NO_COMMAND})`);
                 if (no_command_count >= MAX_NO_COMMAND) {
                     let out = `Agent did not use command in the last ${MAX_NO_COMMAND} auto-prompts. Stopping auto-prompting.`;
                     this.agent.openChat(out);
@@ -75,6 +82,8 @@ export class SelfPrompter {
                     this.state = STOPPED;
                     break;
                 }
+                // Short delay before retry when no command used
+                await new Promise(r => setTimeout(r, 500));
             }
             else {
                 no_command_count = 0;
