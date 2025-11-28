@@ -264,6 +264,59 @@
             color: #666;
             cursor: not-allowed;
         }
+        /* Action Log styles */
+        .action-log-section {
+            grid-column: 1 / -1;
+            margin-top: 8px;
+        }
+        .action-log-section h4 {
+            margin: 0 0 6px 0;
+            color: #aaa;
+            font-size: 0.9em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .action-log-toggle {
+            background: #505050;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        .action-log-toggle:hover { background: #5a5a5a; }
+        .action-log {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 8px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+        .action-log-entry {
+            padding: 2px 0;
+            border-bottom: 1px solid #333;
+        }
+        .action-log-entry:last-child {
+            border-bottom: none;
+        }
+        .action-log-time {
+            color: #888;
+            margin-right: 8px;
+        }
+        .action-log-action {
+            color: #4fc3f7;
+        }
+        .action-log-action.idle {
+            color: #888;
+        }
+        .action-log-action.error {
+            color: #f44336;
+        }
         .msg-input:disabled {
             background: #1a1a1a;
             color: #666;
@@ -448,6 +501,59 @@
         const agentLastMessage = {};
         const inventoryOpen = {};
         let currentAgents = [];
+        
+        // Action log storage - keeps last 50 actions per agent
+        const actionLogs = {};
+        const lastKnownAction = {};
+        const MAX_ACTION_LOG_ENTRIES = 50;
+        
+        function getTimeString() {
+            const now = new Date();
+            return now.toLocaleTimeString('en-US', { hour12: false });
+        }
+        
+        function addActionLogEntry(agentName, action, isError = false) {
+            if (!actionLogs[agentName]) {
+                actionLogs[agentName] = [];
+            }
+            
+            const entry = {
+                time: getTimeString(),
+                action: action,
+                isError: isError,
+                isIdle: action === 'Idle'
+            };
+            
+            actionLogs[agentName].unshift(entry); // Add to beginning
+            
+            // Trim to max entries
+            if (actionLogs[agentName].length > MAX_ACTION_LOG_ENTRIES) {
+                actionLogs[agentName] = actionLogs[agentName].slice(0, MAX_ACTION_LOG_ENTRIES);
+            }
+            
+            updateActionLogUI(agentName);
+        }
+        
+        function updateActionLogUI(agentName) {
+            const logEl = document.getElementById(`actionLog-${agentName}`);
+            if (!logEl) return;
+            
+            const logs = actionLogs[agentName] || [];
+            if (logs.length === 0) {
+                logEl.innerHTML = '<div class="action-log-entry"><span class="action-log-time">--:--:--</span><span class="action-log-action idle">Waiting for actions...</span></div>';
+                return;
+            }
+            
+            logEl.innerHTML = logs.map(entry => {
+                const actionClass = entry.isError ? 'error' : (entry.isIdle ? 'idle' : '');
+                return `<div class="action-log-entry"><span class="action-log-time">${entry.time}</span><span class="action-log-action ${actionClass}">${entry.action}</span></div>`;
+            }).join('');
+        }
+        
+        function clearActionLog(agentName) {
+            actionLogs[agentName] = [];
+            updateActionLogUI(agentName);
+        }
 
         // Item texture helpers (use PrismarineJS minecraft-assets CDN with graceful fallbacks)
         const BASE_ICON_VERSION_CANDIDATES = ['1.21.8'];
@@ -658,6 +764,15 @@
             if (messageDiv) {
                 messageDiv.textContent = message;
             }
+            
+            // Log important messages to action log
+            const lowerMsg = message.toLowerCase();
+            if (lowerMsg.includes('error') || lowerMsg.includes('exception') || 
+                lowerMsg.includes('failed') || lowerMsg.includes('stuck') ||
+                lowerMsg.includes('exiting') || lowerMsg.includes('restarting') ||
+                lowerMsg.includes('killing') || lowerMsg.includes('died')) {
+                addActionLogEntry(agentName, `⚠ ${message}`, true);
+            }
         });
 
         // Subscribe to aggregated state updates (re-sent on each connect)
@@ -712,7 +827,14 @@
                         armorEl.innerHTML = `<div class="armor-grid">${parts.join('')}</div>`;
                     }
                     if (actionEl && st.action) {
-                        actionEl.textContent = `${st.action.current || 'Idle'}`;
+                        const currentAction = st.action.current || 'Idle';
+                        actionEl.textContent = currentAction;
+                        
+                        // Log action changes
+                        if (lastKnownAction[name] !== currentAction) {
+                            addActionLogEntry(name, currentAction);
+                            lastKnownAction[name] = currentAction;
+                        }
                     }
                     if (invGrid && st.inventory?.counts) {
                         const counts = st.inventory.counts;
@@ -923,6 +1045,12 @@
                                 <h3>Inventory</h3>
                                 <div class="cell" id="armor-${agent.name}" style="margin-bottom: 8px;">armor: -</div>
                                 <div class="inventory-grid" id="inventory-${agent.name}"></div>
+                            </div>
+                            <div class="action-log-section" id="actionLogSection-${agent.name}">
+                                <h4>Action Log <button class="action-log-toggle" onclick="clearActionLog('${agent.name}')">Clear</button></h4>
+                                <div class="action-log" id="actionLog-${agent.name}">
+                                    <div class="action-log-entry"><span class="action-log-time">--:--:--</span><span class="action-log-action idle">Waiting for actions...</span></div>
+                                </div>
                             </div>
                             <div id="lastMessage-${agent.name}" class="last-message" style="grid-column: 1 / -1;"><strong>Last Message:</strong> ${lastMessage}</div>
                         </div>

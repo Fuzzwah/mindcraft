@@ -426,14 +426,17 @@ export class Agent {
         this.bot.on('death', () => {
             this.actions.cancelResume();
             this.actions.stop();
+            sendOutputToServer(this.name, 'Bot died! Respawning...');
         });
         this.bot.on('kicked', (reason) => {
             console.warn('Bot kicked!', reason);
+            sendOutputToServer(this.name, `Bot kicked: ${reason}`);
             this.cleanKill('Bot kicked! Killing agent process.');
         });
         this.bot.on('messagestr', async (message, _, jsonMsg) => {
             if (jsonMsg.translate && jsonMsg.translate.startsWith('death') && message.startsWith(this.name)) {
                 console.log('Agent died: ', message);
+                sendOutputToServer(this.name, `Death: ${message}`);
                 let death_pos = this.bot.entity.position;
                 this.memory_bank.rememberPlace('last_death_position', death_pos.x, death_pos.y, death_pos.z);
                 let death_pos_text = null;
@@ -489,6 +492,8 @@ export class Agent {
 
     cleanKill(msg='Killing agent process...', code=1) {
         this.history.add('system', msg);
+        // Send the kill reason to the UI before exiting
+        sendOutputToServer(this.name, `cleanKill: ${msg}`);
         this.bot.chat(code > 1 ? 'Restarting.': 'Exiting.');
         this.history.save();
         process.exit(code);
