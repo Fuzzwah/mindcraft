@@ -46,20 +46,28 @@ export class Gemini {
             });
         }
 
-        const result = await this.genAI.models.generateContent({
-            model: this.model_name || "gemini-2.5-flash",
-            contents: contents,
-            safetySettings: this.safetySettings,
-            config: {
-                systemInstruction: systemMessage,
-                ...(this.params || {})
+        try {
+            const result = await this.genAI.models.generateContent({
+                model: this.model_name || "gemini-2.5-flash",
+                contents: contents,
+                safetySettings: this.safetySettings,
+                config: {
+                    systemInstruction: systemMessage,
+                    ...(this.params || {})
+                }
+            });
+            const response = await result.text;
+
+            console.log('Received.');
+
+            return response;
+        } catch (err) {
+            console.error('Gemini API error:', err.message);
+            if (err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('rate')) {
+                return "I'm being rate limited, please wait a moment.";
             }
-        });
-        const response = await result.text;
-
-        console.log('Received.');
-
-        return response;
+            return "I encountered an error communicating with Gemini, please try again.";
+        }
     }
 
     async sendVisionRequest(turns, systemMessage, imageBuffer) {

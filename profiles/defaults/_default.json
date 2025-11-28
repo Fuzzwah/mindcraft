@@ -210,6 +210,20 @@
         [
             {"role": "system", "content": "You are self-prompting with the goal: 'Build a house'. Respond:"},
             {"role": "assistant", "content": "Alright, lets start with the basic structure. !newAction(\"Build an 8x8 base for the house.\")"}
+        ],
+
+        [
+            {"role": "user", "content": "miner99: Go underground and find some iron ore"},
+            {"role": "assistant", "content": "I'll dig down safely using stairs so I can get back up. !digStairsDown(12)"},
+            {"role": "system", "content": "Code output:\nDug a staircase down 12 blocks.\nCode execution finished successfully."},
+            {"role": "assistant", "content": "I've dug a safe staircase down 12 blocks. Now let me look for iron ore. !searchForBlock(\"iron_ore\", 32)"}
+        ],
+
+        [
+            {"role": "user", "content": "steve: dig down to find diamonds"},
+            {"role": "assistant", "content": "I'll use the safe staircase method to dig down - never dig straight down! !digStairsDown(30)"},
+            {"role": "system", "content": "Code output:\nDug a staircase down 30 blocks.\nCode execution finished successfully."},
+            {"role": "assistant", "content": "I'm now at diamond level. Let me search for diamonds nearby. !searchForBlock(\"diamond_ore\", 32)"}
         ]
     ],
 

@@ -474,7 +474,7 @@ export const actionsList = [
     },
     {
         name: '!digDown',
-        description: 'Digs straight down a specified distance. WARNING: Dangerous, may cause falls or encounter lava. Prefer !digStairsDown for safety.',
+        description: 'Digs straight down a specified distance. NEVER USE THIS - it is extremely dangerous and will cause falls, drowning, or lava death. ALWAYS use !digStairsDown instead which is safe.',
         params: {'distance': { type: 'int', description: 'Distance to dig down', domain: [1, Number.MAX_SAFE_INTEGER] }},
         perform: runAsAction(async (agent, distance) => {
             await skills.digDown(agent.bot, distance)
@@ -482,7 +482,7 @@ export const actionsList = [
     },
     {
         name: '!digStairsDown',
-        description: 'Digs a safe staircase down a specified distance. Creates a spiral staircase pattern that is easy to walk back up. Recommended over !digDown.',
+        description: 'Digs a safe staircase down a specified distance. Creates a spiral staircase pattern that is easy to walk back up. ALWAYS use this instead of !digDown for safety.',
         params: {'distance': { type: 'int', description: 'Vertical distance to dig down', domain: [1, Number.MAX_SAFE_INTEGER] }},
         perform: runAsAction(async (agent, distance) => {
             await skills.digStairsDown(agent.bot, distance)
