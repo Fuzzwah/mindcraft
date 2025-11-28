@@ -111,6 +111,12 @@ export async function getEmbeddingsWithCache(items, getTextFn, embedFn, cacheKey
     for (let i = 0; i < toEmbed.length; i++) {
         const { item, text, hash } = toEmbed[i];
         
+        // Show progress every few items or for small batches
+        if (toEmbed.length <= 10 || (i + 1) % 5 === 0 || i === 0) {
+            const preview = text.length > 50 ? text.substring(0, 50) + '...' : text;
+            console.log(`  ${cacheKey}: [${i + 1}/${toEmbed.length}] Embedding: "${preview}"`);
+        }
+        
         const embedding = await embedFn(text);
         results.set(item, embedding);
         newEmbeddings[hash] = embedding;
