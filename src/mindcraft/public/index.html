@@ -269,13 +269,30 @@
             grid-column: 1 / -1;
             margin-top: 8px;
         }
-        .action-log-section h4 {
+        .action-log-header {
             margin: 0 0 6px 0;
             color: #aaa;
             font-size: 0.9em;
             display: flex;
             align-items: center;
             gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .action-log-header:hover {
+            color: #ccc;
+        }
+        .action-log-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .action-log-expand-icon {
+            font-size: 0.8em;
+            transition: transform 0.2s ease;
+        }
+        .action-log-section.expanded .action-log-expand-icon {
+            transform: rotate(90deg);
         }
         .action-log-toggle {
             background: #505050;
@@ -292,10 +309,20 @@
             border: 1px solid #444;
             border-radius: 4px;
             padding: 8px;
-            max-height: 150px;
-            overflow-y: auto;
             font-family: monospace;
             font-size: 0.85em;
+            max-height: none;
+            overflow: hidden;
+        }
+        .action-log-section.expanded .action-log {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .action-log-entry.hidden {
+            display: none;
+        }
+        .action-log-section.expanded .action-log-entry.hidden {
+            display: block;
         }
         .action-log-entry {
             padding: 2px 0;
@@ -534,6 +561,9 @@
             updateActionLogUI(agentName);
         }
         
+        const COLLAPSED_VISIBLE_COUNT = 3;
+        const actionLogExpanded = {};
+        
         function updateActionLogUI(agentName) {
             const logEl = document.getElementById(`actionLog-${agentName}`);
             if (!logEl) return;
@@ -544,10 +574,25 @@
                 return;
             }
             
-            logEl.innerHTML = logs.map(entry => {
+            logEl.innerHTML = logs.map((entry, index) => {
                 const actionClass = entry.isError ? 'error' : (entry.isIdle ? 'idle' : '');
-                return `<div class="action-log-entry"><span class="action-log-time">${entry.time}</span><span class="action-log-action ${actionClass}">${entry.action}</span></div>`;
+                const hiddenClass = index >= COLLAPSED_VISIBLE_COUNT ? 'hidden' : '';
+                return `<div class="action-log-entry ${hiddenClass}"><span class="action-log-time">${entry.time}</span><span class="action-log-action ${actionClass}">${entry.action}</span></div>`;
             }).join('');
+        }
+        
+        function toggleActionLog(agentName) {
+            const section = document.getElementById(`actionLogSection-${agentName}`);
+            if (!section) return;
+            
+            const isExpanded = section.classList.contains('expanded');
+            if (isExpanded) {
+                section.classList.remove('expanded');
+                actionLogExpanded[agentName] = false;
+            } else {
+                section.classList.add('expanded');
+                actionLogExpanded[agentName] = true;
+            }
         }
         
         function clearActionLog(agentName) {
@@ -1047,7 +1092,10 @@
                                 <div class="inventory-grid" id="inventory-${agent.name}"></div>
                             </div>
                             <div class="action-log-section" id="actionLogSection-${agent.name}">
-                                <h4>Action Log <button class="action-log-toggle" onclick="clearActionLog('${agent.name}')">Clear</button></h4>
+                                <div class="action-log-header" onclick="toggleActionLog('${agent.name}')">
+                                    <span class="action-log-title"><span class="action-log-expand-icon">▶</span> Action Log</span>
+                                    <button class="action-log-toggle" onclick="event.stopPropagation(); clearActionLog('${agent.name}')">Clear</button>
+                                </div>
                                 <div class="action-log" id="actionLog-${agent.name}">
                                     <div class="action-log-entry"><span class="action-log-time">--:--:--</span><span class="action-log-action idle">Waiting for actions...</span></div>
                                 </div>
