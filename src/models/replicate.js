@@ -97,7 +97,7 @@ export class ReplicateAPI {
 
 	async embed(text) {
 		// Always use a dedicated embedding model, not the chat model
-		const DEFAULT_EMBEDDING_MODEL = "mark3labs/embeddings-gte-base:d619cff29338b9a37c3d06605042e1ff0594a8c3eff0175fd6967f5643fc4d47";
+		const DEFAULT_EMBEDDING_MODEL = "zsxkib/embedding-gemma-300m:d753bd5a898a96666f233f9a33ab1c3fe6527a7be308e1cc9fdcda46abf3e233";
 		
 		// Validate text input
 		if (!text || typeof text !== 'string') {
@@ -109,12 +109,24 @@ export class ReplicateAPI {
 		const isEmbeddingModel = this.model_name && (
 			this.model_name.includes('embed') || 
 			this.model_name.includes('gte') ||
-			this.model_name.includes('e5-')
+			this.model_name.includes('e5-') ||
+			this.model_name.includes('gemma')
 		);
 		const embeddingModel = isEmbeddingModel ? this.model_name : DEFAULT_EMBEDDING_MODEL;
 		
 		// Helper to extract embedding from various output formats
 		const extractEmbedding = (output) => {
+			// Handle base64 encoded embeddings (used by embedding-gemma-300m)
+			if (typeof output === 'string') {
+				try {
+					// Decode base64 to Float32Array
+					const buffer = Buffer.from(output, 'base64');
+					const floatArray = new Float32Array(buffer.buffer, buffer.byteOffset, buffer.length / 4);
+					return Array.from(floatArray);
+				} catch (e) {
+					console.warn('Failed to decode base64 embedding:', e.message);
+				}
+			}
 			if (output.vectors) {
 				return output.vectors;
 			} else if (Array.isArray(output)) {
