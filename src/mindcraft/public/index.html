@@ -529,6 +529,11 @@
         const inventoryOpen = {};
         let currentAgents = [];
         
+        // Command history per agent
+        const commandHistory = {};
+        const historyIndex = {};
+        const MAX_COMMAND_HISTORY = 50;
+        
         // Action log storage - keeps last 50 actions per agent
         const actionLogs = {};
         const lastKnownAction = {};
@@ -1104,9 +1109,9 @@
                         </div>
                         <div class="controls-row">
                             <button class="start-btn" id="sendBtn-${agent.name}" disabled onclick="sendMessage('${agent.name}', document.getElementById('messageInput-${agent.name}').value)">Send</button>
-                            <input class="msg-input" type="text" id="messageInput-${agent.name}" placeholder="Enter message..." 
+                            <input class="msg-input" type="text" id="messageInput-${agent.name}" placeholder="Enter message... (↑↓ for history)" 
                                 oninput="onMsgInputChange('${agent.name}')"
-                                onkeydown="if(event.key === 'Enter') document.getElementById('sendBtn-${agent.name}').click()"
+                                onkeydown="handleInputKeydown(event, '${agent.name}')"
                                 ${!agent.in_game ? 'disabled' : ''}>
                             <button class="neutral-btn" onclick="sendMessage('${agent.name}', '!stop')" ${!agent.in_game ? 'disabled' : ''}>Stop Action</button>
                             <button class="neutral-btn" onclick="sendMessage('${agent.name}', '!stay(-1)')" ${!agent.in_game ? 'disabled' : ''}>Stay Still</button>
@@ -1257,6 +1262,19 @@
         function sendMessage(n, m) {
             if (!m || !m.trim()) return;
             socket.emit('send-message', n, { from: 'ADMIN', message: m });
+            
+            // Add to command history
+            if (!commandHistory[n]) commandHistory[n] = [];
+            // Don't add duplicates of the last command
+            if (commandHistory[n].length === 0 || commandHistory[n][0] !== m.trim()) {
+                commandHistory[n].unshift(m.trim());
+                if (commandHistory[n].length > MAX_COMMAND_HISTORY) {
+                    commandHistory[n] = commandHistory[n].slice(0, MAX_COMMAND_HISTORY);
+                }
+            }
+            // Reset history index
+            historyIndex[n] = -1;
+            
             const input = document.getElementById(`messageInput-${n}`);
             const btn = document.getElementById(`sendBtn-${n}`);
             if (input) input.value = '';
@@ -1267,6 +1285,44 @@
             const btn = document.getElementById(`sendBtn-${name}`);
             if (btn && input) {
                 btn.disabled = !(input.value && input.value.trim().length > 0);
+            }
+        }
+        
+        function handleInputKeydown(event, name) {
+            const input = document.getElementById(`messageInput-${name}`);
+            if (!input) return;
+            
+            if (event.key === 'Enter') {
+                document.getElementById(`sendBtn-${name}`).click();
+                return;
+            }
+            
+            const history = commandHistory[name] || [];
+            if (history.length === 0) return;
+            
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (historyIndex[name] === undefined || historyIndex[name] === -1) {
+                    historyIndex[name] = 0;
+                } else if (historyIndex[name] < history.length - 1) {
+                    historyIndex[name]++;
+                }
+                input.value = history[historyIndex[name]];
+                onMsgInputChange(name);
+                // Move cursor to end
+                setTimeout(() => input.setSelectionRange(input.value.length, input.value.length), 0);
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (historyIndex[name] === undefined || historyIndex[name] <= 0) {
+                    historyIndex[name] = -1;
+                    input.value = '';
+                } else {
+                    historyIndex[name]--;
+                    input.value = history[historyIndex[name]];
+                }
+                onMsgInputChange(name);
+                // Move cursor to end
+                setTimeout(() => input.setSelectionRange(input.value.length, input.value.length), 0);
             }
         }
 
