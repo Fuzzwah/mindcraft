@@ -414,8 +414,23 @@ export function initializeLoopingItems() {
  */
 export function getDetailedCraftingPlan(targetItem, count = 1, current_inventory = {}) {
     initializeLoopingItems();
-    if (!targetItem || count <= 0 || !getItemId(targetItem)) {
+    if (!targetItem || count <= 0) {
         return "Invalid input. Please provide a valid item name and positive count.";
+    }
+    
+    // Check if item exists, if not try to suggest alternatives for color-variant items
+    if (!getItemId(targetItem)) {
+        // Common items that require a color prefix
+        const colorVariantItems = ['bed', 'wool', 'carpet', 'concrete', 'concrete_powder', 
+            'terracotta', 'glazed_terracotta', 'stained_glass', 'stained_glass_pane', 
+            'shulker_box', 'banner', 'candle'];
+        
+        for (const baseItem of colorVariantItems) {
+            if (targetItem === baseItem || targetItem.endsWith('_' + baseItem)) {
+                return `Invalid item "${targetItem}". This item requires a color prefix. Try: white_${baseItem}, red_${baseItem}, blue_${baseItem}, etc. Available colors: white, orange, magenta, light_blue, yellow, lime, pink, gray, light_gray, cyan, purple, blue, brown, green, red, black.`;
+            }
+        }
+        return `Invalid item "${targetItem}". Please provide a valid Minecraft item name.`;
     }
 
     if (isBaseItem(targetItem)) {
