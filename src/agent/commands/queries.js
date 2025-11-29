@@ -309,6 +309,60 @@ export const queryList = [
         },
     },
     {
+        name: '!recipe',
+        description: 'Get the crafting recipe for an item. If exact item name not found, suggests similar items. Use this instead of searching the wiki for recipes.',
+        params: {
+            'itemName': { type: 'string', description: 'The item to get the recipe for (e.g., "white_bed", "iron_pickaxe").' }
+        },
+        perform: function (agent, itemName) {
+            // First try exact match
+            let recipes = mc.getItemCraftingRecipes(itemName);
+            let matchedItem = itemName;
+            
+            // If no exact match, try to find similar items
+            if (!recipes || recipes.length === 0) {
+                const allItems = mc.getAllItems();
+                const matchingItems = allItems.filter(item => 
+                    item.name.includes(itemName) || itemName.includes(item.name)
+                ).map(item => item.name);
+                
+                // Try each matching item for a recipe
+                for (const match of matchingItems) {
+                    recipes = mc.getItemCraftingRecipes(match);
+                    if (recipes && recipes.length > 0) {
+                        matchedItem = match;
+                        break;
+                    }
+                }
+                
+                // If still no recipe found, suggest similar items or check if it's a base item
+                if (!recipes || recipes.length === 0) {
+                    // Check if any matching items exist (even without recipes)
+                    if (matchingItems.length > 0) {
+                        const suggestions = matchingItems.slice(0, 8).join(', ');
+                        return pad(`No crafting recipe for "${itemName}". This may be a base item that must be found/mined. Similar items: ${suggestions}`);
+                    }
+                    return pad(`No item found matching "${itemName}". Check the spelling or try a more specific name.`);
+                }
+            }
+            
+            // Format the recipe(s)
+            let result = matchedItem !== itemName 
+                ? `Showing recipe for "${matchedItem}" (matched from "${itemName}"):\n` 
+                : `Recipe for ${itemName}:\n`;
+            
+            recipes.forEach((recipe, index) => {
+                const [ingredients, output] = recipe;
+                const ingredientList = Object.entries(ingredients)
+                    .map(([item, count]) => `${count}x ${item}`)
+                    .join(' + ');
+                result += `  ${index + 1}. ${ingredientList} => ${output.craftedCount}x ${matchedItem}\n`;
+            });
+            
+            return pad(result.trim());
+        }
+    },
+    {
         name: '!searchWiki',
         description: 'Search the Minecraft Wiki for the given query.',
         params: {
