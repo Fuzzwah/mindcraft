@@ -29,7 +29,26 @@ export function blacklistCommands(commands) {
 const commandRegex = /!(\w+)(?:\(((?:-?\d+(?:\.\d+)?|true|false|"[^"]*")(?:\s*,\s*(?:-?\d+(?:\.\d+)?|true|false|"[^"]*"))*)\))?/
 const argRegex = /-?\d+(?:\.\d+)?|true|false|"[^"]*"/g;
 
+// Try to extract a command from malformed output (e.g., backtick-wrapped commands)
+function preprocessMessage(message) {
+    // Try to find backtick-wrapped command-like patterns and convert to proper syntax
+    // Matches: `commandName("args")` or `commandName(args)`
+    const backtickPattern = /`(\w+)\(([^`]*)\)`/;
+    const match = message.match(backtickPattern);
+    if (match && !message.includes('!')) {
+        const potentialCommand = '!' + match[1] + '(' + match[2] + ')';
+        // Verify this looks like a real command before substituting
+        const cmdName = '!' + match[1];
+        if (commandMap[cmdName]) {
+            console.log(`Preprocessed malformed command: "${match[0]}" -> "${potentialCommand}"`);
+            return message.replace(match[0], potentialCommand);
+        }
+    }
+    return message;
+}
+
 export function containsCommand(message) {
+    message = preprocessMessage(message);
     const commandMatch = message.match(commandRegex);
     if (commandMatch)
         return "!" + commandMatch[1];
@@ -95,6 +114,7 @@ function checkInInterval(number, lowerBound, upperBound, endpointType) {
  * @returns {string | Object}
  */
 export function parseCommandMessage(message) {
+    message = preprocessMessage(message);
     const commandMatch = message.match(commandRegex);
     if (!commandMatch) return `Command is incorrectly formatted`;
 
