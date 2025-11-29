@@ -11,6 +11,58 @@ export function log(bot, message) {
     bot.output += message + '\n';
 }
 
+/**
+ * Wrap an async operation with interrupt checking and timeout.
+ * This helps ensure operations can be interrupted even if they're stuck.
+ * @param {MinecraftBot} bot - reference to the minecraft bot
+ * @param {Promise} promise - the promise to wrap
+ * @param {number} timeoutMs - timeout in milliseconds (default 30 seconds)
+ * @returns {Promise} resolves with the result or rejects if interrupted/timed out
+ */
+async function interruptibleOperation(bot, promise, timeoutMs = 30000) {
+    return new Promise((resolve, reject) => {
+        let resolved = false;
+        
+        // Check for interrupts periodically
+        const checkInterval = setInterval(() => {
+            if (bot.interrupt_code && !resolved) {
+                resolved = true;
+                clearInterval(checkInterval);
+                clearTimeout(timeout);
+                reject(new Error('Operation interrupted'));
+            }
+        }, 100);
+        
+        // Timeout fallback
+        const timeout = setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                clearInterval(checkInterval);
+                reject(new Error(`Operation timed out after ${timeoutMs}ms`));
+            }
+        }, timeoutMs);
+        
+        // Wait for the original promise
+        promise
+            .then(result => {
+                if (!resolved) {
+                    resolved = true;
+                    clearInterval(checkInterval);
+                    clearTimeout(timeout);
+                    resolve(result);
+                }
+            })
+            .catch(err => {
+                if (!resolved) {
+                    resolved = true;
+                    clearInterval(checkInterval);
+                    clearTimeout(timeout);
+                    reject(err);
+                }
+            });
+    });
+}
+
 async function autoLight(bot) {
     if (world.shouldPlaceTorch(bot)) {
         try {
@@ -150,6 +202,7 @@ export async function smeltItem(bot, itemName, num=1) {
      * await skills.smeltItem(bot, "raw_iron");
      * await skills.smeltItem(bot, "beef");
      **/
+    if (bot.interrupt_code) return false;
 
     if (!mc.isSmeltable(itemName)) {
         log(bot, `Cannot smelt ${itemName}. Hint: make sure you are smelting the 'raw' item.`);
@@ -177,11 +230,26 @@ export async function smeltItem(bot, itemName, num=1) {
     if (bot.entity.position.distanceTo(furnaceBlock.position) > 4) {
         await goToNearestBlock(bot, 'furnace', 4, furnaceRange);
     }
+    
+    if (bot.interrupt_code) return false;
+    
     bot.modes.pause('unstuck');
     await bot.lookAt(furnaceBlock.position);
 
     console.log('smelting...');
-    const furnace = await bot.openFurnace(furnaceBlock);
+    let furnace;
+    try {
+        furnace = await interruptibleOperation(bot, bot.openFurnace(furnaceBlock), 10000);
+    } catch (err) {
+        if (bot.interrupt_code || err.message?.includes('interrupted')) {
+            log(bot, 'Furnace operation cancelled - interrupted.');
+            if (placedFurnace)
+                await collectBlock(bot, 'furnace', 1);
+            return false;
+        }
+        throw err;
+    }
+    
     // check if the furnace is already smelting something
     let input_item = furnace.inputItem();
     if (input_item && input_item.type !== mc.getItemId(itemName) && input_item.count > 0) {
@@ -290,7 +358,7 @@ export async function clearNearestFurnace(bot) {
     }
 
     console.log('clearing furnace...');
-    const furnace = await bot.openFurnace(furnaceBlock);
+    const furnace = await interruptibleOperation(bot, bot.openFurnace(furnaceBlock), 10000);
     console.log('opened furnace...')
     // take the items out of the furnace
     let smelted_item, intput_item, fuel_item;
@@ -385,15 +453,15 @@ export async function defendSelf(bot, range=9) {
         if (bot.entity.position.distanceTo(enemy.position) >= 4 && enemy.name !== 'creeper' && enemy.name !== 'phantom') {
             try {
                 bot.pathfinder.setMovements(new pf.Movements(bot));
-                await bot.pathfinder.goto(new pf.goals.GoalFollow(enemy, 3.5), true);
-            } catch (err) {/* might error if entity dies, ignore */}
+                await interruptibleOperation(bot, bot.pathfinder.goto(new pf.goals.GoalFollow(enemy, 3.5), true), 10000);
+            } catch (err) {/* might error if entity dies or interrupted, ignore */}
         }
         if (bot.entity.position.distanceTo(enemy.position) <= 2) {
             try {
                 bot.pathfinder.setMovements(new pf.Movements(bot));
                 let inverted_goal = new pf.goals.GoalInvert(new pf.goals.GoalFollow(enemy, 2));
-                await bot.pathfinder.goto(inverted_goal, true);
-            } catch (err) {/* might error if entity dies, ignore */}
+                await interruptibleOperation(bot, bot.pathfinder.goto(inverted_goal, true), 10000);
+            } catch (err) {/* might error if entity dies or interrupted, ignore */}
         }
         bot.pvp.attack(enemy);
         attacked = true;
@@ -759,7 +827,12 @@ export async function placeBlock(bot, blockType, x, y, z, placeOn='bottom', dont
         let goal = new pf.goals.GoalNear(targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 2);
         let inverted_goal = new pf.goals.GoalInvert(goal);
         bot.pathfinder.setMovements(new pf.Movements(bot));
-        await bot.pathfinder.goto(inverted_goal);
+        try {
+            await interruptibleOperation(bot, bot.pathfinder.goto(inverted_goal), 10000);
+        } catch (err) {
+            if (bot.interrupt_code) return false; // interrupted, exit gracefully
+            // otherwise ignore the error and continue
+        }
     }
     if (bot.entity.position.distanceTo(targetBlock.position) > 4.5) {
         // too far
@@ -876,6 +949,8 @@ export async function putInChest(bot, itemName, num=-1) {
      * @example
      * await skills.putInChest(bot, "oak_log");
      **/
+    if (bot.interrupt_code) return false;
+    
     let chest = world.getNearestBlock(bot, 'chest', 32);
     if (!chest) {
         log(bot, `Could not find a chest nearby.`);
@@ -888,11 +963,26 @@ export async function putInChest(bot, itemName, num=-1) {
     }
     let to_put = num === -1 ? item.count : Math.min(num, item.count);
     await goToPosition(bot, chest.position.x, chest.position.y, chest.position.z, 2);
-    const chestContainer = await bot.openContainer(chest);
-    await chestContainer.deposit(item.type, null, to_put);
-    await chestContainer.close();
-    log(bot, `Successfully put ${to_put} ${itemName} in the chest.`);
-    return true;
+    
+    if (bot.interrupt_code) return false;
+    
+    try {
+        const chestContainer = await interruptibleOperation(bot, bot.openContainer(chest), 10000);
+        if (bot.interrupt_code) {
+            await chestContainer.close();
+            return false;
+        }
+        await chestContainer.deposit(item.type, null, to_put);
+        await chestContainer.close();
+        log(bot, `Successfully put ${to_put} ${itemName} in the chest.`);
+        return true;
+    } catch (err) {
+        if (bot.interrupt_code || err.message?.includes('interrupted')) {
+            log(bot, 'Chest operation cancelled - interrupted.');
+            return false;
+        }
+        throw err;
+    }
 }
 
 export async function takeFromChest(bot, itemName, num=-1) {
@@ -905,40 +995,57 @@ export async function takeFromChest(bot, itemName, num=-1) {
      * @example
      * await skills.takeFromChest(bot, "oak_log");
      * **/
+    if (bot.interrupt_code) return false;
+    
     let chest = world.getNearestBlock(bot, 'chest', 32);
     if (!chest) {
         log(bot, `Could not find a chest nearby.`);
         return false;
     }
     await goToPosition(bot, chest.position.x, chest.position.y, chest.position.z, 2);
-    const chestContainer = await bot.openContainer(chest);
     
-    // Find all matching items in the chest
-    let matchingItems = chestContainer.containerItems().filter(item => item.name === itemName);
-    if (matchingItems.length === 0) {
-        log(bot, `Could not find any ${itemName} in the chest.`);
+    if (bot.interrupt_code) return false;
+    
+    try {
+        const chestContainer = await interruptibleOperation(bot, bot.openContainer(chest), 10000);
+        
+        // Find all matching items in the chest
+        let matchingItems = chestContainer.containerItems().filter(item => item.name === itemName);
+        if (matchingItems.length === 0) {
+            log(bot, `Could not find any ${itemName} in the chest.`);
+            await chestContainer.close();
+            return false;
+        }
+        
+        let totalAvailable = matchingItems.reduce((sum, item) => sum + item.count, 0);
+        let remaining = num === -1 ? totalAvailable : Math.min(num, totalAvailable);
+        let totalTaken = 0;
+        
+        // Take items from each slot until we've taken enough or run out
+        for (const item of matchingItems) {
+            if (remaining <= 0 || bot.interrupt_code) break;
+            
+            let toTakeFromSlot = Math.min(remaining, item.count);
+            await chestContainer.withdraw(item.type, null, toTakeFromSlot);
+            
+            totalTaken += toTakeFromSlot;
+            remaining -= toTakeFromSlot;
+        }
+        
         await chestContainer.close();
-        return false;
+        if (bot.interrupt_code) {
+            log(bot, 'Chest operation interrupted.');
+            return totalTaken > 0;
+        }
+        log(bot, `Successfully took ${totalTaken} ${itemName} from the chest.`);
+        return totalTaken > 0;
+    } catch (err) {
+        if (bot.interrupt_code || err.message?.includes('interrupted')) {
+            log(bot, 'Chest operation cancelled - interrupted.');
+            return false;
+        }
+        throw err;
     }
-    
-    let totalAvailable = matchingItems.reduce((sum, item) => sum + item.count, 0);
-    let remaining = num === -1 ? totalAvailable : Math.min(num, totalAvailable);
-    let totalTaken = 0;
-    
-    // Take items from each slot until we've taken enough or run out
-    for (const item of matchingItems) {
-        if (remaining <= 0) break;
-        
-        let toTakeFromSlot = Math.min(remaining, item.count);
-        await chestContainer.withdraw(item.type, null, toTakeFromSlot);
-        
-        totalTaken += toTakeFromSlot;
-        remaining -= toTakeFromSlot;
-    }
-    
-    await chestContainer.close();
-    log(bot, `Successfully took ${totalTaken} ${itemName} from the chest.`);
-    return totalTaken > 0;
 }
 
 export async function viewChest(bot) {
@@ -949,25 +1056,38 @@ export async function viewChest(bot) {
      * @example
      * await skills.viewChest(bot);
      * **/
+    if (bot.interrupt_code) return false;
+    
     let chest = world.getNearestBlock(bot, 'chest', 32);
     if (!chest) {
         log(bot, `Could not find a chest nearby.`);
         return false;
     }
     await goToPosition(bot, chest.position.x, chest.position.y, chest.position.z, 2);
-    const chestContainer = await bot.openContainer(chest);
-    let items = chestContainer.containerItems();
-    if (items.length === 0) {
-        log(bot, `The chest is empty.`);
-    }
-    else {
-        log(bot, `The chest contains:`);
-        for (let item of items) {
-            log(bot, `${item.count} ${item.name}`);
+    
+    if (bot.interrupt_code) return false;
+    
+    try {
+        const chestContainer = await interruptibleOperation(bot, bot.openContainer(chest), 10000);
+        let items = chestContainer.containerItems();
+        if (items.length === 0) {
+            log(bot, `The chest is empty.`);
         }
+        else {
+            log(bot, `The chest contains:`);
+            for (let item of items) {
+                log(bot, `${item.count} ${item.name}`);
+            }
+        }
+        await chestContainer.close();
+        return true;
+    } catch (err) {
+        if (bot.interrupt_code || err.message?.includes('interrupted')) {
+            log(bot, 'Chest operation cancelled - interrupted.');
+            return false;
+        }
+        throw err;
     }
-    await chestContainer.close();
-    return true;
 }
 
 export async function consume(bot, itemName="") {
@@ -1073,6 +1193,12 @@ export async function goToGoal(bot, goal) {
      * @param {MinecraftBot} bot, reference to the minecraft bot.
      * @param {pf.goals.Goal} goal, the goal to navigate to.
      **/
+    
+    // Check for interrupt before starting
+    if (bot.interrupt_code) {
+        log(bot, 'Navigation cancelled - interrupted.');
+        return false;
+    }
 
     const nonDestructiveMovements = new pf.Movements(bot);
     const dontBreakBlocks = ['glass', 'glass_pane'];
@@ -1097,17 +1223,29 @@ export async function goToGoal(bot, goal) {
     else {
         log(bot, `Path not found, but attempting to navigate anyway using destructive movements.`);
     }
+    
+    // Check for interrupt after path calculation
+    if (bot.interrupt_code) {
+        log(bot, 'Navigation cancelled - interrupted.');
+        return false;
+    }
 
     const doorCheckInterval = startDoorInterval(bot);
 
     bot.pathfinder.setMovements(final_movements);
     try {
-        await bot.pathfinder.goto(goal);
+        // Use interruptible wrapper with 60 second timeout for pathfinding
+        await interruptibleOperation(bot, bot.pathfinder.goto(goal), 60000);
         clearInterval(doorCheckInterval);
         return true;
     } catch (err) {
         clearInterval(doorCheckInterval);
-        // we need to catch so we can clean up the door check interval, then rethrow the error
+        // If interrupted, return false instead of throwing
+        if (bot.interrupt_code || err.message?.includes('interrupted')) {
+            log(bot, 'Navigation cancelled - interrupted.');
+            return false;
+        }
+        // Rethrow other errors
         throw err;
     }
 }
@@ -1438,7 +1576,12 @@ export async function moveAwayFromEntity(bot, entity, distance=16) {
     let goal = new pf.goals.GoalFollow(entity, distance);
     let inverted_goal = new pf.goals.GoalInvert(goal);
     bot.pathfinder.setMovements(new pf.Movements(bot));
-    await bot.pathfinder.goto(inverted_goal);
+    try {
+        await interruptibleOperation(bot, bot.pathfinder.goto(inverted_goal), 15000);
+    } catch (err) {
+        if (bot.interrupt_code) return false; // interrupted
+        throw err; // re-throw other errors
+    }
     return true;
 }
 
@@ -1752,7 +1895,7 @@ export async function showVillagerTrades(bot, id) {
     }
     
     try {
-        const villager = await bot.openVillager(villagerEntity);
+        const villager = await interruptibleOperation(bot, bot.openVillager(villagerEntity), 10000);
         
         if (!villager.trades || villager.trades.length === 0) {
             log(bot, 'This villager has no trades available - might be sleeping, a baby, or jobless');
@@ -1793,7 +1936,7 @@ export async function tradeWithVillager(bot, id, index, count) {
     }
     
     try {
-        const villager = await bot.openVillager(villagerEntity);
+        const villager = await interruptibleOperation(bot, bot.openVillager(villagerEntity), 10000);
         
         if (!villager.trades || villager.trades.length === 0) {
             log(bot, 'This villager has no trades available - might be sleeping, a baby, or jobless');
