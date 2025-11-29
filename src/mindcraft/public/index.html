@@ -1131,10 +1131,15 @@
             // If agentsDiv is empty, do a full render
             if (!agentsDiv.children.length) {
                 agentsDiv.innerHTML = agents.map(agent => renderAgentCard(agent)).join('');
-                // Update all viewers after initial render
+                // Update all viewers and restore action logs after initial render
                 setTimeout(() => {
                     agents.forEach(a => {
                         if (a.in_game) updateAgentViewer(a.name);
+                        updateActionLogUI(a.name);
+                        if (actionLogExpanded[a.name]) {
+                            const section = document.getElementById(`actionLogSection-${a.name}`);
+                            if (section) section.classList.add('expanded');
+                        }
                     });
                 }, 0);
                 return;
@@ -1154,6 +1159,13 @@
                     // Update existing card
                     el.outerHTML = renderAgentCard(agent);
                     if (agent.in_game) updateAgentViewer(agent.name);
+                    // Restore action log from memory
+                    updateActionLogUI(agent.name);
+                    // Restore expanded state
+                    if (actionLogExpanded[agent.name]) {
+                        const section = document.getElementById(`actionLogSection-${agent.name}`);
+                        if (section) section.classList.add('expanded');
+                    }
                 } else {
                     // Add new card
                     agentsDiv.insertAdjacentHTML('beforeend', renderAgentCard(agent));
@@ -1196,10 +1208,15 @@
             // If agentsDiv is empty, do a full render
             if (!agentsDiv.children.length) {
                 agentsDiv.innerHTML = agents.map(agent => renderAgentCard(agent)).join('');
-                // Update all viewers after initial render
+                // Update all viewers and restore action logs after initial render
                 setTimeout(() => {
                     agents.forEach(a => {
                         if (a.in_game) updateAgentViewer(a.name);
+                        updateActionLogUI(a.name);
+                        if (actionLogExpanded[a.name]) {
+                            const section = document.getElementById(`actionLogSection-${a.name}`);
+                            if (section) section.classList.add('expanded');
+                        }
                     });
                 }, 0);
                 return;
@@ -1212,6 +1229,13 @@
                     // Update existing card
                     el.outerHTML = renderAgentCard(agent);
                     if (agent.in_game) updateAgentViewer(agent.name);
+                    // Restore action log from memory
+                    updateActionLogUI(agent.name);
+                    // Restore expanded state
+                    if (actionLogExpanded[agent.name]) {
+                        const section = document.getElementById(`actionLogSection-${agent.name}`);
+                        if (section) section.classList.add('expanded');
+                    }
                 } else {
                     // Add new card
                     agentsDiv.insertAdjacentHTML('beforeend', renderAgentCard(agent));
